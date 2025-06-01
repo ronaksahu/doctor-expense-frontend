@@ -1,9 +1,10 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
 
-export default function AddClinic() {
+export default function EditClinic() {
+  const { id } = useParams();
   const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "",
@@ -12,7 +13,44 @@ export default function AddClinic() {
     contact_no: "",
     additional_info: "",
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function fetchClinic() {
+      setLoading(true);
+      try {
+        const token = sessionStorage.getItem("doctor_token");
+        const res = await apiFetch(
+          `${BASE_URL}/doctor/getClinicList?id=${id}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const data = await res.json();
+        if (res.ok && data.clinic) {
+          setForm({
+            name: data.clinic.name || "",
+            address: data.clinic.address || "",
+            admin_name: data.clinic.admin_name || "",
+            additional_info: data.clinic.additional_info || "",
+            contact_no: data.clinic.contact_no || "",
+          });
+        } else {
+          alert(data.message || "Failed to fetch clinic details");
+          navigate("/clinic/list");
+        }
+      } catch (err) {
+        alert("Network error");
+        navigate("/clinic/list");
+      }
+      setLoading(false);
+    }
+    fetchClinic();
+  }, [id, navigate]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -20,13 +58,13 @@ export default function AddClinic() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
     try {
       const token = sessionStorage.getItem("doctor_token");
       const res = await apiFetch(
-        `${BASE_URL}/doctor/clinic`,
+        `${BASE_URL}/doctor/clinic/${id}`,
         {
-          method: "POST",
+          method: "PUT",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
@@ -36,36 +74,42 @@ export default function AddClinic() {
       );
       const data = await res.json();
       if (res.ok) {
-        alert("Clinic added successfully.");
+        alert("Clinic updated successfully.");
         navigate("/clinic/list");
       } else {
-        alert(data.message || "Failed to add clinic");
+        alert(data.message || "Failed to update clinic");
       }
     } catch (err) {
       alert("Network error");
     }
-    setLoading(false);
+    setSaving(false);
   };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 flex items-center justify-center">
       <div className="bg-white p-6 rounded-xl shadow-md w-full max-w-xl">
-        <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">Add Clinic</h2>
-
+        <button
+          className="mb-4 text-blue-600 hover:underline"
+          onClick={() => navigate(-1)}
+        >
+          ← Back to Clinic List
+        </button>
+        <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">Edit Clinic</h2>
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-medium text-gray-700">Clinic/Hospital Name</label>
             <input
               type="text"
               name="name"
-              placeholder="e.g. Kirti Hospital"
-              className="input"
+              className="input bg-gray-100 cursor-not-allowed"
               value={form.name}
-              onChange={handleChange}
-              required
+              disabled
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700">Branch Location / Address</label>
             <input
@@ -78,7 +122,6 @@ export default function AddClinic() {
               required
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700">Admin</label>
             <input
@@ -91,7 +134,6 @@ export default function AddClinic() {
               required
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700">Contact Details</label>
             <input
@@ -104,7 +146,6 @@ export default function AddClinic() {
               required
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700">Notes</label>
             <textarea
@@ -116,13 +157,12 @@ export default function AddClinic() {
               onChange={handleChange}
             />
           </div>
-
           <button
             type="submit"
-            className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
-            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition"
+            disabled={saving}
           >
-            {loading ? "Adding..." : "Add Clinic"}
+            {saving ? "Saving..." : "Update Clinic"}
           </button>
         </form>
       </div>

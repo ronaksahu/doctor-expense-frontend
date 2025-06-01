@@ -1,81 +1,129 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiFetch } from "../../utils/apiFetch";
+import { BASE_URL } from "../../utils/constants";
 
 export default function AddExpense() {
-  const [clinicName, setClinicName] = useState("");
+  const [clinicList, setClinicList] = useState([]);
+  const [clinicId, setClinicId] = useState("");
   const [notes, setNotes] = useState("");
   const [date, setDate] = useState("");
   const [category, setCategory] = useState("");
-  const [billedReceived, setBilledReceived] = useState("");
+  const [billedAmount, setBilledAmount] = useState("");
   const [tdsDeducted, setTdsDeducted] = useState("no");
   const [tdsAmount, setTdsAmount] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState("None");
   const [paymentMode, setPaymentMode] = useState("NEFT");
-  const [paymentReceived, setPaymentReceived] = useState("");
+  const [amountReceived, setAmountReceived] = useState("");
+  const navigate = useNavigate();
 
-  const billed = parseFloat(billedReceived) || 0;
-  const received = parseFloat(paymentReceived) || 0;
+  // Fetch clinic names on mount
+  useEffect(() => {
+    async function fetchClinics() {
+      try {
+        const token = sessionStorage.getItem("doctor_token");
+        const res = await apiFetch(
+          `${BASE_URL}/doctor/getAllClinicNames`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.clinics)) {
+          setClinicList(data.clinics);
+        }
+      } catch {
+        setClinicList([]);
+      }
+    }
+    fetchClinics();
+  }, []);
 
-  // Reverse calculate TDS and Total Amount
-  const calculatedTdsAmount =
-    tdsDeducted === "yes" ? parseFloat((billed * (10 / 90)).toFixed(2)) : 0;
-
-  const totalAmount =
-    tdsDeducted === "yes" ? billed + calculatedTdsAmount : billed;
-
+  // Calculate TDS and totals
+  const billed = parseFloat(billedAmount) || 0;
+  const received = parseFloat(amountReceived) || 0;
+  const tds = tdsDeducted === "yes" ? tdsAmount : 0;
+  const totalAmount = tdsDeducted === "yes" ? billed - tds : billed;
   const pendingBalance = billed - received;
 
-  // Update tdsAmount whenever billed changes and tds is yes
+  // Update tdsAmount if TDS is yes and billed changes
   useEffect(() => {
-    if (tdsDeducted === "yes") {
-      setTdsAmount(calculatedTdsAmount);
+    if (tdsDeducted === "yes" && billed > 0) {
+      setTdsAmount(tdsAmount > billed ? billed : tdsAmount);
     } else {
       setTdsAmount(0);
     }
-  }, [billedReceived, tdsDeducted]);
+    // eslint-disable-next-line
+  }, [billedAmount, tdsDeducted]);
 
-  const handleSubmit = (e) => {
+  // Handler for TDS amount input
+  const handleTdsAmountChange = (e) => {
+    let val = parseFloat(e.target.value) || 0;
+    if (val > billed) val = billed;
+    setTdsAmount(val);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-
-    const formData = {
-      clinicName,
-      notes,
-      date,
-      category,
-      billedReceived,
-      tdsDeducted,
-      tdsAmount,
-      totalAmount,
-      paymentStatus,
-      paymentMode,
-      paymentReceived,
-      pendingBalance,
-    };
-
-    console.log("Submitting Expense:", formData);
-    alert("Expense Saved ✅");
+    const token = sessionStorage.getItem("doctor_token");
+    try {
+      const res = await apiFetch(
+        `${BASE_URL}/doctor/expense`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            notes,
+            expense_date: date,
+            category,
+            billed_amount: billed,
+            tds_deducted: tdsDeducted === "yes",
+            tds_amount: tds,
+            payment_status: paymentStatus,
+            payment_mode: paymentMode,
+            amount_received: received,
+            clinic_id: clinicId,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        alert("Expense and payment added successfully.");
+        navigate("/expenses/list");
+      } else {
+        alert(data.message || "Failed to add expense");
+      }
+    } catch {
+      alert("Network error");
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 flex justify-center">
       <div className="bg-white p-6 rounded-xl shadow-md w-full max-w-2xl">
         <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">Add Expense</h2>
-
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Clinic Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Clinic Name</label>
             <select
               className="input"
-              value={clinicName}
-              onChange={(e) => setClinicName(e.target.value)}
+              value={clinicId}
+              onChange={(e) => setClinicId(e.target.value)}
               required
             >
               <option value="">Select Clinic Name</option>
-              <option>Aaditya Nursing Home</option>
-              <option>Kirti Hospital</option>
+              {clinicList.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
             </select>
           </div>
-
           {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Notes</label>
@@ -86,7 +134,6 @@ export default function AddExpense() {
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
-
           {/* Date */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Date</label>
@@ -95,9 +142,9 @@ export default function AddExpense() {
               className="input"
               value={date}
               onChange={(e) => setDate(e.target.value)}
+              required
             />
           </div>
-
           {/* Category */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Category</label>
@@ -105,26 +152,27 @@ export default function AddExpense() {
               className="input"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
+              required
             >
-              <option>OPD</option>
-              <option>Procedure</option>
-              <option>Surgery</option>
-              <option>IPD</option>
+              <option value="">Select Category</option>
+              <option value="OPD">OPD</option>
+              <option value="Procedure">Procedure</option>
+              <option value="Surgery">Surgery</option>
+              <option value="IPD">IPD</option>
+              <option value="Consultation">Consultation</option>
             </select>
           </div>
-
-          {/* Billed/Received Amount */}
+          {/* Billed Amount */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Billed/Received Amount</label>
+            <label className="block text-sm font-medium text-gray-700">Billed Amount</label>
             <input
               type="number"
               className="input"
-              value={billedReceived}
-              onChange={(e) => setBilledReceived(e.target.value)}
+              value={billedAmount}
+              onChange={(e) => setBilledAmount(e.target.value)}
               required
             />
           </div>
-
           {/* TDS Deducted */}
           <div>
             <label className="block text-sm font-medium text-gray-700">TDS Deducted?</label>
@@ -151,23 +199,24 @@ export default function AddExpense() {
               </label>
             </div>
           </div>
-
-          {/* TDS Amount (Auto Calculated) */}
+          {/* TDS Amount (Editable if TDS is yes) */}
           {tdsDeducted === "yes" && (
             <div>
               <label className="block text-sm font-medium text-gray-700">TDS Amount</label>
               <input
                 type="number"
-                className="input bg-gray-100"
+                className="input"
                 value={tdsAmount}
-                readOnly
+                onChange={handleTdsAmountChange}
+                min={0}
+                max={billed}
+                required
               />
             </div>
           )}
-
-          {/* Total Amount (Before TDS) */}
+          {/* Total Amount (After TDS) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Total Amount (Before TDS)</label>
+            <label className="block text-sm font-medium text-gray-700">Total Amount (After TDS)</label>
             <input
               type="number"
               className="input bg-gray-100"
@@ -175,18 +224,16 @@ export default function AddExpense() {
               readOnly
             />
           </div>
-
           {/* Amount Received */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Amount Received</label>
             <input
               type="number"
               className="input"
-              value={paymentReceived}
-              onChange={(e) => setPaymentReceived(e.target.value)}
+              value={amountReceived}
+              onChange={(e) => setAmountReceived(e.target.value)}
             />
           </div>
-
           {/* Payment Mode */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Payment Mode</label>
@@ -199,9 +246,9 @@ export default function AddExpense() {
               <option>UPI</option>
               <option>Cash</option>
               <option>Cheque</option>
+              <option>Bank Transfer</option>
             </select>
           </div>
-
           {/* Payment Status */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Payment Status</label>
@@ -213,9 +260,9 @@ export default function AddExpense() {
               <option>None</option>
               <option>Partial</option>
               <option>Full</option>
+              <option>Received</option>
             </select>
           </div>
-
           {/* Pending Balance */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Pending Balance</label>
@@ -226,7 +273,6 @@ export default function AddExpense() {
               readOnly
             />
           </div>
-
           <button
             type="submit"
             className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
@@ -241,6 +287,5 @@ export default function AddExpense() {
 
 
 
-  
 
-  
+

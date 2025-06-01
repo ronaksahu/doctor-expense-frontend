@@ -1,7 +1,11 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  // Get doctor user from sessionStorage
+  const doctorUser = JSON.parse(sessionStorage.getItem("doctor_user") || "{}");
+  const [showProfile, setShowProfile] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -20,7 +24,9 @@ export default function Dashboard() {
       <main className="flex-grow p-4 space-y-6">
         {/* Greeting */}
         <div>
-          <h2 className="text-xl font-semibold text-gray-800">Hello, Dr. Name 👋</h2>
+          <h2 className="text-xl font-semibold text-gray-800">
+            Hello, {doctorUser.name ? `Dr. ${doctorUser.name}` : "Doctor"} 👋
+          </h2>
         </div>
 
         {/* Cards Grid */}
@@ -50,24 +56,35 @@ export default function Dashboard() {
             🗂️ Expense List
           </button>
           <button
-            onClick={() => navigate("/reports")}
+            onClick={() => navigate("/reports/complete")}
             className="bg-purple-600 text-white py-3 rounded-md shadow hover:bg-purple-700"
           >
             📊 Complete Reports
-          </button>
-          <button
-            onClick={() => navigate("/records")}
-            className="bg-pink-500 text-white py-3 rounded-md shadow hover:bg-pink-600"
-          >
-            🏥 Hospital Records
           </button>
         </div>
 
         {/* Logout */}
         <div className="text-center">
           <button
-            onClick={() => {
-              localStorage.removeItem("doctor_logged_in");
+            onClick={async () => {
+              try {
+                await fetch(
+                  `${
+                    import.meta.env.VITE_API_BASE_URL || "http://localhost:8800/api"
+                  }/auth/doctor/logout`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      message: "Admin logged out successfully.",
+                    }),
+                  }
+                );
+              } catch {
+                // ignore errors
+              }
+              sessionStorage.clear();
+              localStorage.clear();
               navigate("/");
             }}
             className="bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600"

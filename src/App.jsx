@@ -9,11 +9,14 @@ import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import AddClinic from "./pages/Clinic/AddClinic";
 import ClinicList from "./pages/Clinic/ClinicList";
+import ClinicDetails from "./pages/Clinic/ClinicDetails";
+import EditClinic from "./pages/Clinic/EditClinic";
 import AddExpense from "./pages/Expenses/AddExpense";
 import EditExpense from "./pages/Expenses/EditExpense";
 import ExpenseList from "./pages/Expenses/ExpenseList";
+import ExpenseDetails from "./pages/Expenses/ExpenseDetails";
 import CompleteReport from "./pages/Reports/CompleteReport";
-import RecordsByHospital from "./pages/Reports/RecordsByHospital";
+import AdminDashboard from "./pages/Admin/AdminDashboard";
 
 // Components
 import MobileLayout from "./components/MobileLayout";
@@ -27,7 +30,10 @@ function App() {
         <Route path="/" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/admin" element={<AdminLogin />} />
-
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/clinic/details/:id" element={<ClinicDetails />} />
+        <Route path="/clinic/edit/:id" element={<EditClinic />} />
         {/* Protected Routes */}
         <Route
           path="/dashboard"
@@ -86,18 +92,18 @@ function App() {
           }
         />
         <Route
-          path="/reports/complete"
+          path="/expenses/details/:id"
           element={
             <ProtectedRoute>
-              <MobileLayout><CompleteReport /></MobileLayout>
+              <MobileLayout><ExpenseDetails /></MobileLayout>
             </ProtectedRoute>
           }
         />
         <Route
-          path="/reports/hospitals"
+          path="/reports/complete"
           element={
             <ProtectedRoute>
-              <MobileLayout><RecordsByHospital /></MobileLayout>
+              <MobileLayout><CompleteReport /></MobileLayout>
             </ProtectedRoute>
           }
         />

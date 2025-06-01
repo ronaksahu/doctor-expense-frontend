@@ -1,24 +1,46 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { apiFetch } from "../../utils/apiFetch";
+import { BASE_URL } from "../../utils/constants";
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
-    // Normally: validate with backend
-    if (email && password) {
-      // ✅ Set login flag
-      localStorage.setItem("doctor_logged_in", "true");
-
-      // ✅ Redirect to dashboard
-      navigate("/dashboard");
-    } else {
+    if (!email || !password) {
       alert("Enter valid credentials");
+      return;
     }
+
+    setLoading(true);
+    try {
+      const res = await apiFetch(
+        `${BASE_URL}/auth/doctor/signin`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        // Store token and user in session storage
+        sessionStorage.setItem("doctor_token", data.token);
+        sessionStorage.setItem("doctor_user", JSON.stringify(data.user));
+        localStorage.setItem("doctor_logged_in", "true"); // <-- Add this line
+        navigate("/dashboard");
+      } else {
+        alert(data.message || "Login failed");
+      }
+    } catch (err) {
+      alert("Network error");
+    }
+    setLoading(false);
   };
 
   return (
@@ -32,6 +54,7 @@ export default function Login() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            required
           />
           <input
             type="password"
@@ -39,14 +62,30 @@ export default function Login() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
           />
           <button
             type="submit"
             className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+            disabled={loading}
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
+        <div className="mt-4 flex flex-col gap-2 items-center">
+          <button
+            className="text-blue-600 hover:underline"
+            onClick={() => navigate("/signup")}
+          >
+            Signup
+          </button>
+          <button
+            className="text-green-600 hover:underline"
+            onClick={() => navigate("/admin/login")}
+          >
+            Admin Login
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -11,7 +11,6 @@ export default function MobileLayout({ children }) {
     { label: "🏥 Clinics", path: "/clinic/list" },
     { label: "💰 Expenses", path: "/expenses/list" },
     { label: "📊 Reports", path: "/reports/complete" },
-    { label: "🏨 Hospital-wise", path: "/reports/hospitals" },
   ];
 
   useEffect(() => {
