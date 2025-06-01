@@ -4,6 +4,7 @@ import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
 
 export default function ClinicDetails() {
+  
   const { id } = useParams();
   const navigate = useNavigate();
   const [clinic, setClinic] = useState(null);

@@ -193,7 +193,10 @@ export default function AdminDashboard() {
                 Next
               </button>
             </div>
-            {/* Logout Button Below Table */}
+            
+          </>
+        )}
+        {/* Logout Button Below Table */}
             <div className="text-center mt-6">
               <button
                 onClick={async () => {
@@ -220,8 +223,6 @@ export default function AdminDashboard() {
                 🚪 Logout
               </button>
             </div>
-          </>
-        )}
       </div>
     </div>
   );

@@ -1,9 +1,5 @@
 {
   "appId": "com.example.app",
   "appName": "doctor-expense-frontend",
-  "webDir": "dist",
-  "server": {
-    "url": "http://192.168.1.34:8800", 
-    "cleartext": true
-  }
+  "webDir": "dist"
 }

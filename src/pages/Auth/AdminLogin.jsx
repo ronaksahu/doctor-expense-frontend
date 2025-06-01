@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
-l
+
 export default function AdminLogin() {
   const navigate = useNavigate();
   const [admin, setAdmin] = useState("");

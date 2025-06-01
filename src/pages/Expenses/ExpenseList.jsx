@@ -167,12 +167,12 @@ export default function ExpenseList() {
                     <tr>
                       <td colSpan={7} className="bg-gray-50 px-4 py-2">
                         <div className="flex flex-wrap gap-2 justify-center">
-                          <button
+                          {/* <button
                             onClick={() => handleEdit(exp.id)}
                             className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded transition"
                           >
                             ✏️ Edit
-                          </button>
+                          </button> */}
                           <button
                             onClick={() => handleDelete(exp.id)}
                             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
