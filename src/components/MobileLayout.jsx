@@ -14,8 +14,9 @@ export default function MobileLayout({ children }) {
   ];
 
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem("doctor_logged_in");
-    if (!isLoggedIn) {
+    const isLoggedIn = localStorage.getItem("doctor_logged_in") === "true";
+    const hasToken = !!localStorage.getItem("doctor_token");
+    if (!isLoggedIn || !hasToken) {
       navigate("/");
     }
   }, [navigate]);

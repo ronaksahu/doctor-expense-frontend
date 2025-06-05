@@ -19,7 +19,7 @@ export default function ClinicList() {
   async function fetchClinics(pageNum = 1) {
     setLoading(true);
     try {
-      const token = sessionStorage.getItem("doctor_token");
+      const token = localStorage.getItem("doctor_token");
       const res = await apiFetch(
         `${BASE_URL}/doctor/getClinicList?page=${pageNum}&limit=${limit}`,
         {

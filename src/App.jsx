@@ -1,5 +1,7 @@
 //✅ src/App.jsx
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 // Pages
 import Login from "./pages/Auth/Login";
@@ -27,7 +29,7 @@ function App() {
     <Router>
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<Login />} />
+        <Route path="/" element={<RootRedirect />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/admin" element={<AdminLogin />} />
         <Route path="/admin/login" element={<AdminLogin />} />
@@ -110,6 +112,21 @@ function App() {
       </Routes>
     </Router>
   );
+}
+
+function RootRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const isDoctor = localStorage.getItem("doctor_logged_in") === "true" && localStorage.getItem("doctor_token");
+    const isAdmin = localStorage.getItem("admin_token");
+    if (isDoctor) {
+      navigate("/dashboard", { replace: true });
+    } else if (isAdmin) {
+      navigate("/admin/dashboard", { replace: true });
+    }
+    // else show login (handled by route)
+  }, [navigate]);
+  return <Login />;
 }
 
 export default App;

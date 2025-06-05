@@ -30,7 +30,7 @@ export default function CompleteReport() {
 
   // Fetch clinic names on mount (only once, even in StrictMode)
   useEffect(() => {
-    const token = sessionStorage.getItem("doctor_token");
+    const token = localStorage.getItem("doctor_token");
     fetch(`${BASE_URL}/doctor/getAllClinicNames`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -43,7 +43,7 @@ export default function CompleteReport() {
 
   // Fetch report data whenever filters or page change
   useEffect(() => {
-    const token = sessionStorage.getItem("doctor_token");
+    const token = localStorage.getItem("doctor_token");
     setLoading(true);
     setError("");
     const params = new URLSearchParams();

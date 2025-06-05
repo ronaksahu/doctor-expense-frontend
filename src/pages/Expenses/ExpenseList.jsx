@@ -19,7 +19,7 @@ export default function ExpenseList() {
   async function fetchExpenses(pageNum = 1) {
     setLoading(true);
     try {
-      const token = sessionStorage.getItem("doctor_token");
+      const token = localStorage.getItem("doctor_token");
       const res = await apiFetch(
         `${BASE_URL}/doctor/expense?page=${pageNum}&limit=${limit}`,
         {
@@ -65,7 +65,7 @@ export default function ExpenseList() {
       return;
     }
     try {
-      const token = sessionStorage.getItem("doctor_token");
+      const token = localStorage.getItem("doctor_token");
       const res = await apiFetch(
         `${BASE_URL}/doctor/expense/${currentId}/payment`,
         {
@@ -102,7 +102,7 @@ export default function ExpenseList() {
   const handleDelete = async (id) => {
     if (window.confirm("Are you sure you want to delete this?")) {
       try {
-        const token = sessionStorage.getItem("doctor_token");
+        const token = localStorage.getItem("doctor_token");
         const res = await apiFetch(
           `${BASE_URL}/doctor/expense/${id}`,
           {

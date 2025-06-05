@@ -14,7 +14,7 @@ export default function ClinicDetails() {
     async function fetchClinic() {
       setLoading(true);
       try {
-        const token = sessionStorage.getItem("doctor_token");
+        const token = localStorage.getItem("doctor_token");
         const res = await apiFetch(
           `${BASE_URL}/doctor/getClinicList?id=${id}`,
           {

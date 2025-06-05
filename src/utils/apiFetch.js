@@ -6,6 +6,15 @@ export async function apiFetch(url, options = {}) {
   const skipRedirect =
     url.includes('/auth/doctor/signin') || url.includes('/auth/doctor/register');
 
+  // Always use token from localStorage for persistence
+  const token = localStorage.getItem("doctor_token");
+  if (token && (!options.headers || !options.headers["Authorization"])) {
+    options.headers = {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`,
+    };
+  }
+
   const response = await fetch(url, options);
   if (!skipRedirect && (response.status === 401 || response.status === 403)) {
     localStorage.clear();

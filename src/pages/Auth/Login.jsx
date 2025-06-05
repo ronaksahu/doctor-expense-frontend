@@ -29,10 +29,10 @@ export default function Login() {
       );
       const data = await res.json();
       if (res.ok) {
-        // Store token and user in session storage
-        sessionStorage.setItem("doctor_token", data.token);
-        sessionStorage.setItem("doctor_user", JSON.stringify(data.user));
-        localStorage.setItem("doctor_logged_in", "true"); // <-- Add this line
+        // Store token and user in localStorage for persistence
+        localStorage.setItem("doctor_token", data.token);
+        localStorage.setItem("doctor_user", JSON.stringify(data.user));
+        localStorage.setItem("doctor_logged_in", "true");
         navigate("/dashboard");
       } else {
         alert(data.message || "Login failed");

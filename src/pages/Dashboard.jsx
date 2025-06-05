@@ -3,8 +3,8 @@ import { useState } from "react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  // Get doctor user from sessionStorage
-  const doctorUser = JSON.parse(sessionStorage.getItem("doctor_user") || "{}");
+  // Get doctor user from localStorage
+  const doctorUser = JSON.parse(localStorage.getItem("doctor_user") || "{}");
   const [showProfile, setShowProfile] = useState(false);
 
   return (

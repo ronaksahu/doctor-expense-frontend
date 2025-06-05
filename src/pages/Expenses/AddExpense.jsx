@@ -11,7 +11,6 @@ export default function AddExpense() {
   const [category, setCategory] = useState("");
   const [billedAmount, setBilledAmount] = useState("");
   const [tdsDeducted, setTdsDeducted] = useState("no");
-  const [tdsAmount, setTdsAmount] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState("None");
   const [paymentMode, setPaymentMode] = useState("NEFT");
   const [amountReceived, setAmountReceived] = useState("");
@@ -21,7 +20,7 @@ export default function AddExpense() {
   useEffect(() => {
     async function fetchClinics() {
       try {
-        const token = sessionStorage.getItem("doctor_token");
+        const token = localStorage.getItem("doctor_token");
         const res = await apiFetch(
           `${BASE_URL}/doctor/getAllClinicNames`,
           {
@@ -43,32 +42,16 @@ export default function AddExpense() {
   }, []);
 
   // Calculate TDS and totals
+  // billedAmount is the amount after TDS deduction (user input)
   const billed = parseFloat(billedAmount) || 0;
+  const totalBilled = tdsDeducted === "yes" && billed > 0 ? billed / 0.9 : billed;
+  const tds = tdsDeducted === "yes" && billed > 0 ? totalBilled * 0.1 : 0;
   const received = parseFloat(amountReceived) || 0;
-  const tds = tdsDeducted === "yes" ? tdsAmount : 0;
-  const totalAmount = tdsDeducted === "yes" ? billed - tds : billed;
   const pendingBalance = billed - received;
-
-  // Update tdsAmount if TDS is yes and billed changes
-  useEffect(() => {
-    if (tdsDeducted === "yes" && billed > 0) {
-      setTdsAmount(tdsAmount > billed ? billed : tdsAmount);
-    } else {
-      setTdsAmount(0);
-    }
-    // eslint-disable-next-line
-  }, [billedAmount, tdsDeducted]);
-
-  // Handler for TDS amount input
-  const handleTdsAmountChange = (e) => {
-    let val = parseFloat(e.target.value) || 0;
-    if (val > billed) val = billed;
-    setTdsAmount(val);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = sessionStorage.getItem("doctor_token");
+    const token = localStorage.getItem("doctor_token");
     try {
       const res = await apiFetch(
         `${BASE_URL}/doctor/expense`,
@@ -85,6 +68,7 @@ export default function AddExpense() {
             billed_amount: billed,
             tds_deducted: tdsDeducted === "yes",
             tds_amount: tds,
+            total_billed: totalBilled,
             payment_status: paymentStatus,
             payment_mode: paymentMode,
             amount_received: received,
@@ -199,31 +183,30 @@ export default function AddExpense() {
               </label>
             </div>
           </div>
-          {/* TDS Amount (Editable if TDS is yes) */}
+          {/* Total Billed Amount (before TDS, auto) */}
           {tdsDeducted === "yes" && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">TDS Amount</label>
+              <label className="block text-sm font-medium text-gray-700">Total Billed Amount (before TDS)</label>
               <input
                 type="number"
-                className="input"
-                value={tdsAmount}
-                onChange={handleTdsAmountChange}
-                min={0}
-                max={billed}
-                required
+                className="input bg-gray-100"
+                value={totalBilled.toFixed(2)}
+                readOnly
               />
             </div>
           )}
-          {/* Total Amount (After TDS) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Total Amount (After TDS)</label>
-            <input
-              type="number"
-              className="input bg-gray-100"
-              value={totalAmount.toFixed(2)}
-              readOnly
-            />
-          </div>
+          {/* TDS Amount (auto) */}
+          {tdsDeducted === "yes" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">TDS Amount (10% of Total Billed)</label>
+              <input
+                type="number"
+                className="input bg-gray-100"
+                value={tds.toFixed(2)}
+                readOnly
+              />
+            </div>
+          )}
           {/* Amount Received */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Amount Received</label>

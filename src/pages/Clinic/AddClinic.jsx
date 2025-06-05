@@ -22,7 +22,7 @@ export default function AddClinic() {
     e.preventDefault();
     setLoading(true);
     try {
-      const token = sessionStorage.getItem("doctor_token");
+      const token = localStorage.getItem("doctor_token");
       const res = await apiFetch(
         `${BASE_URL}/doctor/clinic`,
         {

@@ -17,7 +17,7 @@ export default function ExpenseDetails() {
     async function fetchExpense() {
       setLoading(true);
       try {
-        const token = sessionStorage.getItem("doctor_token");
+        const token = localStorage.getItem("doctor_token");
         const res = await apiFetch(
           `${BASE_URL}/doctor/expense?clinic_id=${clinicId}&expense_id=${id}`,
           {
