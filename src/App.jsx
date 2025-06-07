@@ -2,6 +2,8 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { dbPromise } from "./utils/db";
+import { fullDataLoad } from "./utils/fullDataLoad";
 
 // Pages
 import Login from "./pages/Auth/Login";
@@ -25,6 +27,65 @@ import MobileLayout from "./components/MobileLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
+  // Sync offline queue when back online
+  useEffect(() => {
+    const syncQueue = async () => {
+      if (navigator.onLine) {
+        const db = await dbPromise;
+        const tx = db.transaction("queue", "readwrite");
+        const all = await tx.store.getAll();
+        const paymentLocalIdArr= {};
+        for (const item of all) {
+          try {
+            //check item.url contains any key present in paymentLocalIdArr replace it with value from paymentLocalIdArr
+            if (item.url.includes("payment_local_id")) {
+              for (const key in paymentLocalIdArr) {
+                item.url = item.url.replace(key, paymentLocalIdArr[key]);
+              }
+            }
+           
+            const res = await fetch(item.url, item.options);
+
+            if (res.ok) {
+              const data = await res.json();
+              if(data.payment_local_id) {
+                paymentLocalIdArr.push(data.payment_local_id, data.id);
+              }
+            }
+
+            await tx.store.delete(item.id);
+          } catch {}
+        }
+        // clear paymentLocalIdArr
+        paymentLocalIdArr.length = 0;
+        await tx.done;
+        // After syncing, reload all data
+        try { await fullDataLoad(); } catch {}
+      }
+    };
+    window.addEventListener("online", syncQueue);
+
+    // Call fullDataLoad every 10 seconds when online
+    let intervalId;
+    function startInterval() {
+      if (intervalId) clearInterval(intervalId);
+      if (navigator.onLine) {
+        intervalId = setInterval(() => {
+          fullDataLoad().catch(() => {});
+        }, 10000);
+      }
+    }
+    startInterval();
+    window.addEventListener("online", startInterval);
+    window.addEventListener("offline", () => { if (intervalId) clearInterval(intervalId); });
+    return () => {
+      window.removeEventListener("online", syncQueue);
+      window.removeEventListener("online", startInterval);
+      window.removeEventListener("offline", () => { if (intervalId) clearInterval(intervalId); });
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
+
   return (
     <Router>
       <Routes>

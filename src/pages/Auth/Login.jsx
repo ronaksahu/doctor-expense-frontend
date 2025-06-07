@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { fullDataLoad } from "../../utils/fullDataLoad";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -33,11 +34,13 @@ export default function Login() {
         localStorage.setItem("doctor_token", data.token);
         localStorage.setItem("doctor_user", JSON.stringify(data.user));
         localStorage.setItem("doctor_logged_in", "true");
+        await fullDataLoad();
         navigate("/dashboard");
       } else {
         alert(data.message || "Login failed");
       }
     } catch (err) {
+      console.log(err);
       alert("Network error");
     }
     setLoading(false);

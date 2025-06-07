@@ -28,17 +28,56 @@ export default function CompleteReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Dynamically populate categories from expenses (online/offline)
+  const [allCategories, setAllCategories] = useState([
+    "OPD", "Procedure", "Surgery", "IPD", "Consultation"
+  ]);
+  useEffect(() => {
+    async function fetchCategories() {
+      let categoriesSet = new Set();
+      if (navigator.onLine) {
+        // Try to get from report.expenses if available
+        if (report.expenses && report.expenses.length > 0) {
+          report.expenses.forEach(exp => {
+            if (exp.category) categoriesSet.add(exp.category);
+          });
+        }
+      } else {
+        // Offline: get all categories from local DB
+        const db = await (await import("../../utils/db")).dbPromise;
+        const allExpenses = await db.getAll("expenses");
+        allExpenses.forEach(exp => {
+          if (exp.category) categoriesSet.add(exp.category);
+        });
+      }
+      // Always include default categories
+      ["OPD", "Procedure", "Surgery", "IPD", "Consultation"].forEach(c => categoriesSet.add(c));
+      setAllCategories(Array.from(categoriesSet));
+    }
+    fetchCategories();
+  }, [report.expenses, loading]);
+
   // Fetch clinic names on mount (only once, even in StrictMode)
   useEffect(() => {
     const token = localStorage.getItem("doctor_token");
-    fetch(`${BASE_URL}/doctor/getAllClinicNames`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then((res) => res.json())
-      .then((data) => setClinics(data.clinics || []))
-      .catch(() => setClinics([]));
+    const fetchClinics = async () => {
+      try {
+        const res = await apiFetch(
+          `${BASE_URL}/doctor/getAllClinicNames`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+          { store: 'clinics', method: 'GET' }
+        );
+        const data = await res.json();
+        setClinics(data.clinics || []);
+      } catch {
+        setClinics([]);
+      }
+    };
+    fetchClinics();
   }, []);
 
   // Fetch report data whenever filters or page change
@@ -56,25 +95,71 @@ export default function CompleteReport() {
     if (filters.payment) params.append("payment_status", filters.payment);
     params.append("page", report.page);
     params.append("limit", report.pageSize);
-    fetch(`${BASE_URL}/doctor/getReport?${params.toString()}`, {
-      headers: {
-        Authorization: token ? `Bearer ${token}` : undefined,
-      },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("API error");
-        return res.json();
-      })
-      .then((data) => {
-        if (!data || typeof data !== 'object') throw new Error('Invalid API response');
-        setReport((prev) => ({ ...prev, ...data }));
-      })
-      .catch(() => {
+    const fetchReport = async () => {
+      try {
+        const res = await apiFetch(
+          `${BASE_URL}/doctor/getReport?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+          { store: 'expenses', method: 'GET' }
+        );
+        const data = await res.json();
+        if (res.ok) {
+          setReport((prev) => ({ ...prev, ...data }));
+        } else {
+          setError(data.message || "Failed to fetch report");
+        }
+      } catch {
         setError("Failed to fetch report");
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
     // eslint-disable-next-line
   }, [filters, report.page]);
+
+  // Calculate totals and filter from local data if offline
+  useEffect(() => {
+    async function calculateOfflineTotalsAndFilter() {
+      if (!navigator.onLine) {
+        const db = await (await import("../../utils/db")).dbPromise;
+        let allExpenses = await db.getAll("expenses");
+        // Apply filters
+        allExpenses = allExpenses.filter(exp => {
+          if (filters.from && exp.expense_date < filters.from) return false;
+          if (filters.to && exp.expense_date > filters.to) return false;
+          if (filters.clinic && String(exp.clinic_id) !== String(filters.clinic)) return false;
+          if (filters.category && exp.category !== filters.category) return false;
+          if (filters.tds) {
+            if (filters.tds === "yes" && !exp.tds_deducted) return false;
+            if (filters.tds === "no" && exp.tds_deducted) return false;
+          }
+          if (filters.payment && exp.payment_status !== filters.payment) return false;
+          return true;
+        });
+        let total_billed = 0, total_received = 0, total_pending = 0, total_tds = 0;
+        for (const exp of allExpenses) {
+          total_billed += Number(exp.billed_amount) || 0;
+          total_received += Number(exp.received_amount) || 0;
+          total_pending += Number(exp.pending_amount) || 0;
+          total_tds += Number(exp.tds_amount) || 0;
+        }
+        setReport((prev) => ({
+          ...prev,
+          total_billed,
+          total_received,
+          total_pending,
+          total_tds,
+          expenses: allExpenses,
+        }));
+      }
+    }
+    calculateOfflineTotalsAndFilter();
+  }, [loading, filters]);
 
   const handleChange = (e) => {
     setFilters((f) => ({ ...f, [e.target.name]: e.target.value }));
@@ -143,10 +228,9 @@ export default function CompleteReport() {
           className="input"
         >
           <option value="">All Categories</option>
-          <option>OPD</option>
-          <option>Procedure</option>
-          <option>Surgery</option>
-          <option>IPD</option>
+          {allCategories.map((cat) => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
         </select>
         <select
           name="tds"

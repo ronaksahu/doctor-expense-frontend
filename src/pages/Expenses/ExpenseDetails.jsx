@@ -19,17 +19,27 @@ export default function ExpenseDetails() {
       try {
         const token = localStorage.getItem("doctor_token");
         const res = await apiFetch(
-          `${BASE_URL}/doctor/expense?clinic_id=${clinicId}&expense_id=${id}`,
+          `${BASE_URL}/doctor/expense/${id}`,
           {
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
+          { store: 'expenses', method: 'GET' }
         );
         const data = await res.json();
+        // Try to find the expense by id in both online and offline mode
+        let foundExpense = null;
         if (res.ok && data.expense) {
-          setExpense(data.expense);
+          foundExpense = data.expense;
+        } else if (data.expenses && Array.isArray(data.expenses)) {
+          foundExpense = data.expenses.find((e) => String(e.id) === String(id));
+        } else if (Array.isArray(data) && data.length) {
+          foundExpense = data.find((e) => String(e.id) === String(id));
+        }
+        if (foundExpense) {
+          setExpense(foundExpense);
         } else {
           alert(data.message || "Failed to fetch expense details");
         }

@@ -22,15 +22,27 @@ export default function ClinicDetails() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
+          { store: 'clinics', method: 'GET' }
         );
         const data = await res.json();
-        if (res.ok) {
-          setClinic(data.clinic);
+        // Try to find the clinic by id in both online and offline mode
+        let foundClinic = null;
+        if (res.ok && data.clinic) {
+          foundClinic = data.clinic;
+        } else if (data.clinics && Array.isArray(data.clinics)) {
+          foundClinic = data.clinics.find((c) => String(c.id) === String(id));
+        } else if (Array.isArray(data) && data.length) {
+          foundClinic = data.find((c) => String(c.id) === String(id));
+        }
+        if (foundClinic) {
+          // Try to get createdAt from multiple possible fields for offline/online
+          let createdAt = foundClinic.createdAt || foundClinic.created_at || foundClinic.registeredAt || foundClinic.registered_at || null;
+          setClinic({ ...foundClinic, createdAt });
         } else {
           alert(data.message || "Failed to fetch clinic details");
         }
-      } catch (err) {
+      } catch {
         alert("Network error");
       }
       setLoading(false);

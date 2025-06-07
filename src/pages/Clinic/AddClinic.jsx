@@ -32,11 +32,22 @@ export default function AddClinic() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(form),
-        }
+        },
+        { store: 'clinics', method: 'POST', data: form }
       );
       const data = await res.json();
       if (res.ok) {
         alert("Clinic added successfully.");
+        navigate("/clinic/list");
+      } else if (data.offline) {
+        // Offline: update cache and UI immediately
+        const db = await (await import("../../utils/db")).dbPromise;
+        // Generate a temporary ID (timestamp-based) for offline record
+        const offlineClinic = { ...form, id: Date.now() };
+        await db.put("clinics", offlineClinic);
+        setForm({ name: "", address: "", admin_name: "", contact_no: "", additional_info: "" });
+        alert("Clinic added offline. Will sync when online.");
+        // Instead of navigate+replace, just navigate to trigger ClinicList fetch
         navigate("/clinic/list");
       } else {
         alert(data.message || "Failed to add clinic");

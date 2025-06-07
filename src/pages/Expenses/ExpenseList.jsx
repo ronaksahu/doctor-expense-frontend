@@ -27,7 +27,8 @@ export default function ExpenseList() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
+        { store: 'expenses', method: 'GET' }
       );
       const data = await res.json();
       if (res.ok) {
@@ -66,8 +67,57 @@ export default function ExpenseList() {
     }
     try {
       const token = localStorage.getItem("doctor_token");
+      // If offline, handle payment and expense update in local DB
+      if (!navigator.onLine) {
+        const db = await (await import("../../utils/db")).dbPromise;
+        // 1. Add payment to payments table
+        const paymentId = Date.now();
+        const payment = {
+          id: paymentId,
+          expenseId: currentId,
+          payment_date: collectedDate,
+          amount: parseFloat(additionalAmount),
+        };
+        await db.put("payments", payment);
+        // 2. Update expense: add payment to payments array, update received_amount and pending_amount
+        const expense = await db.get("expenses", currentId);
+        if (expense) {
+          const payments = Array.isArray(expense.payments) ? [...expense.payments] : [];
+          payments.push(payment);
+          const received_amount = (parseFloat(expense.received_amount) || 0) + payment.amount;
+          const pending_amount = (parseFloat(expense.billed_amount) || 0) - received_amount;
+          await db.put("expenses", {
+            ...expense,
+            payments,
+            received_amount,
+            pending_amount,
+          });
+        }
+        // 3. Queue the payment mutation for sync when back online
+        await db.add("queue", {
+          url: `${BASE_URL}/doctor/expense/payment`,
+          options: {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ date: collectedDate, amount: parseFloat(additionalAmount) , offlineExpenseId: currentId}),
+          },
+          store: 'payments',
+          method: 'POST',
+          data: payment
+        });
+        alert("Payment added offline. Will sync when online.");
+        setShowCollectForm(false);
+        setCurrentId(null);
+        setCollectedDate("");
+        setAdditionalAmount("");
+        fetchExpenses(page);
+        return;
+      }
       const res = await apiFetch(
-        `${BASE_URL}/doctor/expense/${currentId}/payment`,
+        `${BASE_URL}/doctor/expense/payment`,
         {
           method: "POST",
           headers: {
@@ -77,8 +127,10 @@ export default function ExpenseList() {
           body: JSON.stringify({
             date: collectedDate,
             amount: parseFloat(additionalAmount),
+            expenseId: currentId,
           }),
-        }
+        },
+        { store: 'expenses', method: 'POST', data: { date: collectedDate, amount: parseFloat(additionalAmount) } }
       );
       const data = await res.json();
       if (res.ok) {
@@ -87,7 +139,13 @@ export default function ExpenseList() {
         setCurrentId(null);
         setCollectedDate("");
         setAdditionalAmount("");
-        // Optionally, refresh the expenses list here
+        fetchExpenses(page);
+      } else if (data.offline) {
+        alert("Payment added offline. Will sync when online.");
+        setShowCollectForm(false);
+        setCurrentId(null);
+        setCollectedDate("");
+        setAdditionalAmount("");
         fetchExpenses(page);
       } else {
         alert(data.message || "Failed to add payment");

@@ -28,22 +28,32 @@ export default function EditClinic() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
+          { store: 'clinics', method: 'GET' }
         );
         const data = await res.json();
+        // Try to find the clinic by id in both online and offline mode
+        let clinic = null;
         if (res.ok && data.clinic) {
+          clinic = data.clinic;
+        } else if (data.clinics && Array.isArray(data.clinics)) {
+          clinic = data.clinics.find((c) => String(c.id) === String(id));
+        } else if (Array.isArray(data) && data.length) {
+          clinic = data.find((c) => String(c.id) === String(id));
+        }
+        if (clinic) {
           setForm({
-            name: data.clinic.name || "",
-            address: data.clinic.address || "",
-            admin_name: data.clinic.admin_name || "",
-            additional_info: data.clinic.additional_info || "",
-            contact_no: data.clinic.contact_no || "",
+            name: clinic.name || "",
+            address: clinic.address || "",
+            admin_name: clinic.admin_name || "",
+            additional_info: clinic.additional_info ?? clinic.notes ?? "",
+            contact_no: clinic.contact_no || "",
           });
         } else {
           alert(data.message || "Failed to fetch clinic details");
           navigate("/clinic/list");
         }
-      } catch (err) {
+      } catch {
         alert("Network error");
         navigate("/clinic/list");
       }
@@ -70,17 +80,33 @@ export default function EditClinic() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(form),
-        }
+        },
+        { store: 'clinics', method: 'PUT', data: form }
       );
       const data = await res.json();
       if (res.ok) {
         alert("Clinic updated successfully.");
         navigate("/clinic/list");
+      } else if (data.offline) {
+        // Offline: update cache and UI immediately
+        const db = await (await import("../../utils/db")).dbPromise;
+        // Save the updated clinic in local DB with the same id (ensure id is a number if needed)
+        await db.put("clinics", { ...form, id: typeof id === 'number' ? id : Number(id) });
+        alert("Clinic updated offline. Will sync when online.");
+        navigate("/clinic/list");
       } else {
         alert(data.message || "Failed to update clinic");
       }
-    } catch (err) {
-      alert("Network error");
+    } catch {
+      // Handle offline update if apiFetch throws (e.g., no network)
+      if (!navigator.onLine) {
+        const db = await (await import("../../utils/db")).dbPromise;
+        await db.put("clinics", { ...form, id: typeof id === 'number' ? id : Number(id) });
+        alert("Clinic updated offline. Will sync when online.");
+        navigate("/clinic/list");
+      } else {
+        alert("Network error");
+      }
     }
     setSaving(false);
   };

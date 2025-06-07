@@ -8,36 +8,85 @@ export default function ClinicList() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const limit = 10;
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchClinics(page);
-    // eslint-disable-next-line
-  }, [page]);
+    function handleOnline() {
+      setIsOnline(true);
+      fetchClinics(page, true); // refetch from server when back online
+    }
+    function handleOffline() {
+      setIsOnline(false);
+      fetchClinics(page, false); // refetch from cache when offline
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [page]); // Added 'page' to dependency array
 
-  async function fetchClinics(pageNum = 1) {
+  // Only one useEffect needed: always fetch on mount and when page or isOnline changes
+  useEffect(() => {
+    fetchClinics(page, isOnline);
+  }, [page, isOnline]);
+
+  async function fetchClinics(pageNum = 1, online = navigator.onLine) {
     setLoading(true);
     try {
       const token = localStorage.getItem("doctor_token");
-      const res = await apiFetch(
-        `${BASE_URL}/doctor/getClinicList?page=${pageNum}&limit=${limit}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+      let res, data;
+      if (online) {
+        res = await apiFetch(
+          `${BASE_URL}/doctor/getClinicList?page=${pageNum}&limit=${limit}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
           },
+          { store: 'clinics', method: 'GET' }
+        );
+        data = await res.json();
+        if (!res.ok) {
+          const cached = await apiFetch('', {}, { store: 'clinics', method: 'GET' });
+          const cachedData = await cached.json();
+          setClinics(Array.isArray(cachedData.clinics) ? cachedData.clinics : []);
+          setTotalPages(1);
+          setLoading(false);
+          return;
         }
-      );
-      const data = await res.json();
-      if (res.ok) {
-        setClinics(data.clinics.clinics || []);
-        setTotalPages(data.clinics.totalPages || 1);
       } else {
-        alert(data.message || "Failed to fetch clinics");
+        res = await apiFetch('', {}, { store: 'clinics', method: 'GET' });
+        data = await res.json();
       }
-    } catch (err) {
-      alert("Network error");
+      // Always extract clinics array from data
+      let clinicsArr = [];
+      if (Array.isArray(data.clinics)) {
+        clinicsArr = data.clinics;
+      } else if (Array.isArray(data)) {
+        clinicsArr = data;
+      } else if (data.clinics && Array.isArray(data.clinics.clinics)) {
+        clinicsArr = data.clinics.clinics;
+      }
+      clinicsArr = clinicsArr.filter(c => c && c.id && c.name);
+      setClinics(clinicsArr);
+      setTotalPages(1);
+    } catch {
+      // On error, fallback to cache if offline, else show empty
+      if (!online) {
+        const cached = await apiFetch('', {}, { store: 'clinics', method: 'GET' });
+        const cachedData = await cached.json();
+        setClinics(Array.isArray(cachedData.clinics) ? cachedData.clinics : []);
+        setTotalPages(1);
+      } else {
+        setClinics([]);
+        setTotalPages(1);
+        alert("Network error");
+      }
     }
     setLoading(false);
   }
@@ -78,6 +127,44 @@ export default function ClinicList() {
                     onClick={() => navigate(`/clinic/details/${clinic.id}`)}
                   >
                     📄 View Details
+                  </button>
+                  <button
+                    className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition"
+                    style={{ marginLeft: 'auto' }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Delete clinic '${clinic.name}'?`)) {
+                        try {
+                          const token = localStorage.getItem("doctor_token");
+                          const res = await apiFetch(
+                            `${BASE_URL}/doctor/clinic/${clinic.id}`,
+                            {
+                              method: "DELETE",
+                              headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${token}`,
+                              },
+                            },
+                            { store: 'clinics', method: 'DELETE', data: { id: clinic.id } }
+                          );
+                          if (res.ok) {
+                            setClinics((prev) => prev.filter((c) => c.id !== clinic.id));
+                          } else {
+                            const data = await res.json();
+                            if (data.offline) {
+                              setClinics((prev) => prev.filter((c) => c.id !== clinic.id));
+                              alert("Clinic deleted offline. Will sync when online.");
+                            } else {
+                              alert("Failed to delete clinic");
+                            }
+                          }
+                        } catch {
+                          alert("Network error");
+                        }
+                      }
+                    }}
+                  >
+                    🗑️ Delete
                   </button>
                 </div>
               </div>

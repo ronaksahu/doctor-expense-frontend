@@ -28,7 +28,8 @@ export default function AddExpense() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
+          { store: 'clinics', method: 'GET' }
         );
         const data = await res.json();
         if (res.ok && Array.isArray(data.clinics)) {
@@ -53,15 +54,70 @@ export default function AddExpense() {
     e.preventDefault();
     const token = localStorage.getItem("doctor_token");
     try {
+      // Find clinic name from clinicList
+      const clinicObj = clinicList.find(c => String(c.id) === String(clinicId));
+      const clinic_name = clinicObj ? clinicObj.name : clinicId;
+      function generateSmallId() {
+        return Math.floor(100000 + Math.random() * 900000); // 6-digit
+      }
+      const ranId = generateSmallId();
+
       const res = await apiFetch(
         `${BASE_URL}/doctor/expense`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers:
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
           body: JSON.stringify({
+        notes,
+        expense_date: date,
+        category,
+        billed_amount: billed,
+        tds_deducted: tdsDeducted === "yes",
+        tds_amount: tds,
+        total_billed: totalBilled,
+        payment_status: paymentStatus,
+        payment_mode: paymentMode,
+        amount_received: received,
+        clinic_id: clinicId,
+        payment_local_id: ranId
+
+          }),
+        },
+        { 
+          store: 'expenses', 
+          method: 'POST', 
+          data: {
+            notes,
+            expense_date: date,
+            category,
+            billed_amount: billed,
+            tds_deducted: tdsDeducted === "yes",
+            tds_amount: tds,
+            total_billed: totalBilled,
+            payment_status: paymentStatus,
+            payment_mode: paymentMode,
+            received_amount: received,
+            clinic_id: clinicId,
+            clinic_name, // added clinic_name
+            pending_amount: totalBilled - received, // always present
+            payment_local_id: ranId ,// pass to local DB and queue
+            id: ranId
+          } 
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        // Get the expense id from the API response
+        const responseData = await res.json();
+        const expenseId = responseData.id || (responseData.expense && responseData.expense.id);
+        // Save the expense in local DB with the backend id for consistency
+        if (expenseId) {
+          const db = await (await import("../../utils/db")).dbPromise;
+          await db.put("expenses", {
             notes,
             expense_date: date,
             category,
@@ -72,13 +128,44 @@ export default function AddExpense() {
             payment_status: paymentStatus,
             payment_mode: paymentMode,
             amount_received: received,
+            received_amount: received,
+            pending_amount: totalBilled - received,
             clinic_id: clinicId,
-          }),
+            clinic_name,
+            id: expenseId,
+          });
         }
-      );
-      const data = await res.json();
-      if (res.ok) {
         alert("Expense and payment added successfully.");
+        navigate("/expenses/list");
+      } else if (data.offline) {
+        // Offline: update cache and UI immediately
+        const db = await (await import("../../utils/db")).dbPromise;
+        // Find clinic name from clinicList
+        const clinicObj = clinicList.find(c => String(c.id) === String(clinicId));
+        const clinic_name = clinicObj ? clinicObj.name : clinicId;
+        // Generate a small unique ID for offline record (e.g., random 6-digit number)
+        
+        const offlineExpense = {
+          notes,
+          expense_date: date,
+          category,
+          billed_amount: billed,
+          tds_deducted: tdsDeducted === "yes",
+          tds_amount: tds,
+          total_billed: totalBilled,
+          payment_status: paymentStatus,
+          payment_mode: paymentMode,
+          amount_received: received, // for compatibility
+          received_amount: received, // always present
+          pending_amount: pendingBalance, // always present
+          clinic_id: clinicId,
+          clinic_name, // always present
+          id: ranId,
+          payment_local_id: ranId,
+        };
+        await db.put("expenses", offlineExpense);
+        alert("Expense added offline. Will sync when online.");
+        // Instead of navigate+replace, just navigate to trigger ExpenseList fetch
         navigate("/expenses/list");
       } else {
         alert(data.message || "Failed to add expense");

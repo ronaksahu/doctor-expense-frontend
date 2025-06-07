@@ -1,21 +1,12 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { apiFetch } from "../../utils/apiFetch"; // Adjust the import based on your project structure
+// import { useAuth } from "../context/AuthContext"; // Remove this line
+import { BASE_URL } from "../../utils/constants";
 
 export default function EditExpense() {
   const { id } = useParams(); // optional if you're routing with an ID
-
-  // Simulated existing data (replace with fetch if needed)
-  const existing = {
-    clinicName: "Kirti Hospital",
-    notes: "Follow-up",
-    date: "2025-04-25",
-    category: "OPD",
-    billedReceived: "90",
-    tdsDeducted: "yes",
-    paymentStatus: "Partial",
-    paymentMode: "UPI",
-    paymentReceived: "60",
-  };
+  const token = localStorage.getItem("doctor_token"); // Use localStorage for token
 
   // STATE
   const [clinicName, setClinicName] = useState("");
@@ -42,28 +33,14 @@ export default function EditExpense() {
   const pendingBalance = billed - received;
 
   useEffect(() => {
-    // Load values into state
-    setClinicName(existing.clinicName);
-    setNotes(existing.notes);
-    setDate(existing.date);
-    setCategory(existing.category);
-    setBilledReceived(existing.billedReceived);
-    setTdsDeducted(existing.tdsDeducted);
-    setPaymentStatus(existing.paymentStatus);
-    setPaymentMode(existing.paymentMode);
-    setPaymentReceived(existing.paymentReceived);
-    setTdsAmount(calculatedTdsAmount);
-  }, []);
-
-  useEffect(() => {
     if (tdsDeducted === "yes") {
       setTdsAmount(calculatedTdsAmount);
     } else {
       setTdsAmount(0);
     }
-  }, [billedReceived, tdsDeducted]);
+  }, [billedReceived, tdsDeducted, calculatedTdsAmount]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const updatedExpense = {
@@ -81,8 +58,27 @@ export default function EditExpense() {
       pendingBalance,
     };
 
-    console.log("Updated expense:", updatedExpense);
-    alert("Expense updated ✅");
+    // Call the API to update the expense
+    const res = await apiFetch(
+      `${BASE_URL}/doctor/expense/${id}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updatedExpense),
+      },
+      { store: 'expenses', method: 'PUT', data: updatedExpense }
+    );
+    const data = await res.json();
+    if (res.ok) {
+      alert("Expense updated ✅");
+    } else if (data.offline) {
+      alert("Expense updated offline. Will sync when online.");
+    } else {
+      alert("Failed to update expense");
+    }
   };
 
   return (
