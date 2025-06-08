@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { Network } from '@capacitor/network';
 
 export default function AddClinic() {
   const navigate = useNavigate();
@@ -13,6 +14,18 @@ export default function AddClinic() {
     additional_info: "",
   });
   const [loading, setLoading] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    let listener;
+    Network.getStatus().then(status => setIsOnline(status.connected));
+    Network.addListener('networkStatusChange', status => {
+      setIsOnline(status.connected);
+    }).then(l => { listener = l; });
+    return () => {
+      if (listener && listener.remove) listener.remove();
+    };
+  }, []);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -20,6 +33,7 @@ export default function AddClinic() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isOnline) return;
     setLoading(true);
     try {
       const token = localStorage.getItem("doctor_token");
@@ -32,27 +46,16 @@ export default function AddClinic() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(form),
-        },
-        { store: 'clinics', method: 'POST', data: form }
+        }
       );
       const data = await res.json();
       if (res.ok) {
         alert("Clinic added successfully.");
         navigate("/clinic/list");
-      } else if (data.offline) {
-        // Offline: update cache and UI immediately
-        const db = await (await import("../../utils/db")).dbPromise;
-        // Generate a temporary ID (timestamp-based) for offline record
-        const offlineClinic = { ...form, id: Date.now() };
-        await db.put("clinics", offlineClinic);
-        setForm({ name: "", address: "", admin_name: "", contact_no: "", additional_info: "" });
-        alert("Clinic added offline. Will sync when online.");
-        // Instead of navigate+replace, just navigate to trigger ClinicList fetch
-        navigate("/clinic/list");
       } else {
         alert(data.message || "Failed to add clinic");
       }
-    } catch (err) {
+    } catch {
       alert("Network error");
     }
     setLoading(false);
@@ -62,6 +65,10 @@ export default function AddClinic() {
     <div className="min-h-screen bg-gray-100 p-6 flex items-center justify-center">
       <div className="bg-white p-6 rounded-xl shadow-md w-full max-w-xl">
         <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">Add Clinic</h2>
+
+        {!isOnline && (
+          <div className="text-center text-red-500 mb-4">You are offline. Add/Update actions are disabled.</div>
+        )}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
@@ -131,7 +138,7 @@ export default function AddClinic() {
           <button
             type="submit"
             className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
-            disabled={loading}
+            disabled={loading || !isOnline}
           >
             {loading ? "Adding..." : "Add Clinic"}
           </button>

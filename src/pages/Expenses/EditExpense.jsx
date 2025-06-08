@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
-import { apiFetch } from "../../utils/apiFetch"; // Adjust the import based on your project structure
-// import { useAuth } from "../context/AuthContext"; // Remove this line
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { Network } from '@capacitor/network';
 
 export default function EditExpense() {
-  const { id } = useParams(); // optional if you're routing with an ID
-  const token = localStorage.getItem("doctor_token"); // Use localStorage for token
+  const { id } = useParams();
+  const navigate = useNavigate();
 
   // STATE
   const [clinicName, setClinicName] = useState("");
@@ -19,6 +19,8 @@ export default function EditExpense() {
   const [paymentStatus, setPaymentStatus] = useState("");
   const [paymentMode, setPaymentMode] = useState("");
   const [paymentReceived, setPaymentReceived] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const billed = parseFloat(billedReceived) || 0;
   const received = parseFloat(paymentReceived) || 0;
@@ -40,10 +42,22 @@ export default function EditExpense() {
     }
   }, [billedReceived, tdsDeducted, calculatedTdsAmount]);
 
+  useEffect(() => {
+    let listener;
+    Network.getStatus().then(status => setIsOnline(status.connected));
+    Network.addListener('networkStatusChange', status => {
+      setIsOnline(status.connected);
+    }).then(l => { listener = l; });
+    return () => {
+      if (listener && listener.remove) listener.remove();
+    };
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    const updatedExpense = {
+    if (!isOnline) return;
+    setLoading(true);
+    const form = {
       clinicName,
       notes,
       date,
@@ -51,40 +65,44 @@ export default function EditExpense() {
       billedReceived,
       tdsDeducted,
       tdsAmount,
-      totalAmount,
       paymentStatus,
       paymentMode,
-      paymentReceived,
-      pendingBalance,
+      paymentReceived
     };
-
-    // Call the API to update the expense
-    const res = await apiFetch(
-      `${BASE_URL}/doctor/expense/${id}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(updatedExpense),
-      },
-      { store: 'expenses', method: 'PUT', data: updatedExpense }
-    );
-    const data = await res.json();
-    if (res.ok) {
-      alert("Expense updated ✅");
-    } else if (data.offline) {
-      alert("Expense updated offline. Will sync when online.");
-    } else {
-      alert("Failed to update expense");
+    try {
+      const token = localStorage.getItem("doctor_token");
+      const res = await apiFetch(
+        `${BASE_URL}/doctor/expense/${id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(form),
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        alert("Expense updated successfully.");
+        navigate("/expenses/list");
+      } else {
+        alert(data.message || "Failed to update expense");
+      }
+    } catch {
+      alert("Network error");
     }
+    setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 flex justify-center">
       <div className="bg-white p-6 rounded-xl shadow-md w-full max-w-2xl">
         <h2 className="text-2xl font-bold text-yellow-600 text-center mb-6">Edit Expense</h2>
+
+        {!isOnline && (
+          <div className="text-center text-red-500 mb-4">You are offline. Update actions are disabled.</div>
+        )}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Clinic Name */}
@@ -253,9 +271,10 @@ export default function EditExpense() {
 
           <button
             type="submit"
+            disabled={!isOnline || loading}
             className="w-full bg-yellow-500 text-white py-2 rounded-md hover:bg-yellow-600 transition"
           >
-            Update Expense
+            {loading ? "Updating..." : "Update Expense"}
           </button>
         </form>
       </div>

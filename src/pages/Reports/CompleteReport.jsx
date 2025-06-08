@@ -3,6 +3,10 @@ import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { openDB } from 'idb';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 export default function CompleteReport() {
   const [filters, setFilters] = useState({
@@ -35,18 +39,8 @@ export default function CompleteReport() {
   useEffect(() => {
     async function fetchCategories() {
       let categoriesSet = new Set();
-      if (navigator.onLine) {
-        // Try to get from report.expenses if available
-        if (report.expenses && report.expenses.length > 0) {
-          report.expenses.forEach(exp => {
-            if (exp.category) categoriesSet.add(exp.category);
-          });
-        }
-      } else {
-        // Offline: get all categories from local DB
-        const db = await (await import("../../utils/db")).dbPromise;
-        const allExpenses = await db.getAll("expenses");
-        allExpenses.forEach(exp => {
+      if (report.expenses && report.expenses.length > 0) {
+        report.expenses.forEach(exp => {
           if (exp.category) categoriesSet.add(exp.category);
         });
       }
@@ -59,6 +53,7 @@ export default function CompleteReport() {
 
   // Fetch clinic names on mount (only once, even in StrictMode)
   useEffect(() => {
+    if (!navigator.onLine) return; // Don't call API in offline mode
     const token = localStorage.getItem("doctor_token");
     const fetchClinics = async () => {
       try {
@@ -96,24 +91,50 @@ export default function CompleteReport() {
     params.append("page", report.page);
     params.append("limit", report.pageSize);
     const fetchReport = async () => {
+      setLoading(true);
       try {
-        const res = await apiFetch(
-          `${BASE_URL}/doctor/getReport?${params.toString()}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
+        let data;
+        if (navigator.onLine) {
+          const res = await apiFetch(
+            `${BASE_URL}/doctor/getReport?${params.toString()}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
             },
-          },
-          { store: 'expenses', method: 'GET' }
-        );
-        const data = await res.json();
-        if (res.ok) {
-          setReport((prev) => ({ ...prev, ...data }));
+            { store: 'expenses', method: 'GET' }
+          );
+          data = await res.json();
+          if (res.ok) {
+            setReport((prev) => ({ ...prev, ...data }));
+          } else {
+            setError(data.message || "Failed to fetch report");
+          }
         } else {
-          setError(data.message || "Failed to fetch report");
+          // Offline: load from IndexedDB
+          try {
+            const db = await openDB('doctor-expense-db', 1, { upgrade(db) { db.createObjectStore('expenses', { keyPath: 'id' }); db.createObjectStore('clinics', { keyPath: 'id' }); } });
+            const expenses = await db.getAll('expenses');
+            const clinics = await db.getAll('clinics');
+            // Use these arrays to build the report UI as fallback
+            // Ensure each expense has clinic_name (from expense.clinic_name, expense.clinic.name, or lookup)
+            const clinicsMap = (clinics || []).reduce((acc, c) => { acc[c.id] = c.name; return acc; }, {});
+            const expensesWithClinicName = (expenses || []).map(e => ({
+              ...e,
+              clinic_name: e.clinic_name || (e.clinic && e.clinic.name) || clinicsMap[e.clinic_id] || ''
+            }));
+            setReport((prev) => ({ ...prev, expenses: expensesWithClinicName }));
+            setClinics(clinics);
+            setError("");
+          } catch {
+            setReport((prev) => ({ ...prev, expenses: [] }));
+            setClinics([]);
+            setError(""); // Don't show error in offline fallback
+          }
         }
       } catch {
-        setError("Failed to fetch report");
+        if (navigator.onLine) setError("Failed to fetch report");
+        // Don't show error in offline fallback
       } finally {
         setLoading(false);
       }
@@ -170,34 +191,85 @@ export default function CompleteReport() {
     setReport((r) => ({ ...r, page: newPage }));
   };
 
-  // Download Excel handler
-  const handleDownloadExcel = () => {
-    if (!report.expenses || report.expenses.length === 0) return;
-    // Prepare data for Excel
-    const data = report.expenses.map((r) => ({
-      "Clinic": r.clinic_name,
-      "Date": r.expense_date,
-      "Category": r.category,
-      "Billed": r.billed_amount,
-      "Received": r.received_amount,
-      "Pending": r.pending_amount,
-      "TDS": r.tds_amount,
-    }));
-    // Add summary row at the top
-    data.unshift({
-      "Clinic": "TOTALS",
-      "Date": "",
-      "Category": "",
-      "Billed": report.total_billed,
-      "Received": report.total_received,
-      "Pending": report.total_pending,
-      "TDS": report.total_tds,
-    });
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `doctor-report-${new Date().toISOString().slice(0,10)}.xlsx`);
-  };
+// ...existing code...
+const handleDownloadExcel = async () => {
+  if (!report.expenses || report.expenses.length === 0) return;
+  // Prepare data for Excel
+  const data = report.expenses.map((r) => ({
+    "Clinic": r.clinic_name,
+    "Date": r.expense_date,
+    "Category": r.category,
+    "Billed": r.billed_amount,
+    "Received": r.received_amount,
+    "Pending": r.pending_amount,
+    "TDS": r.tds_amount,
+  }));
+  // Add summary row at the top
+  data.unshift({
+    "Clinic": "TOTALS",
+    "Date": "",
+    "Category": "",
+    "Billed": report.total_billed,
+    "Received": report.total_received,
+    "Pending": report.total_pending,
+    "TDS": report.total_tds,
+  });
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Report");
+  const fileName = `doctor-report-${new Date().toISOString().slice(0,10)}.xlsx`;
+
+  if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    // Android/iOS: use Filesystem and Share
+    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+    try {
+      // Prefer Downloads directory if available
+     // Try to save in Downloads/doctor-expense
+      const dir = Directory.Documents; // fallback if Downloads not available
+      let downloadsDir = Directory.Documents;
+      if (Filesystem.Directory.Downloads) downloadsDir = Filesystem.Directory.Downloads;
+      // Create doctor-expense folder if not exists
+      try {
+        await Filesystem.mkdir({
+          path: 'doctor-expense',
+          directory: downloadsDir,
+          recursive: true,
+        });
+      } catch {/* ignore if already exists */ }
+      // Save file in doctor-expense folder
+      const filePath = `doctor-expense/${fileName}`;
+      const result = await Filesystem.writeFile({
+        path: filePath,
+        data: excelBuffer,
+        directory: downloadsDir,
+        encoding: Filesystem.Encoding.BASE64, // IMPORTANT: use BASE64 for binary files
+        recursive: true,
+      });
+      // Share or open the file
+      await Share.share({
+        title: fileName,
+        text: 'Doctor Report',
+        url: result.uri,
+        dialogTitle: 'Share or open your Excel file',
+      });
+      alert("File saved and ready to share from Downloads/doctor-expense!");
+    } catch (err) {
+      alert('Failed to save or share file: ' + (err.message || err));
+    }
+  } else {
+    // Web: use Blob and file-saver
+    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+};
+
+// ...existing code...
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">

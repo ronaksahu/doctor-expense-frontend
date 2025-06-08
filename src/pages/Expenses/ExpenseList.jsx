@@ -1,47 +1,77 @@
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { getAllFromStore, clearStore, putToStore } from "../../utils/db";
 
 export default function ExpenseList() {
   const navigate = useNavigate();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const didFetchRef = useRef(false);
 
-  useEffect(() => {
-    fetchExpenses(page);
-    // eslint-disable-next-line
-  }, [page]);
-
-  async function fetchExpenses(pageNum = 1) {
+  const fetchExpenses = useCallback(async (pageNum = 1) => {
     setLoading(true);
     try {
       const token = localStorage.getItem("doctor_token");
-      const res = await apiFetch(
-        `${BASE_URL}/doctor/expense?page=${pageNum}&limit=${limit}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        },
-        { store: 'expenses', method: 'GET' }
-      );
-      const data = await res.json();
-      if (res.ok) {
-        setExpenses(data.expenses || []);
-        setTotalPages(data.totalPages || 1);
+      let res, data;
+      if (isOnline) {
+        res = await apiFetch(
+          `${BASE_URL}/doctor/expense?page=${pageNum}&limit=${limit}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        data = await res.json();
+        // If API returns nested structure, extract expenses array
+        const expensesArr = Array.isArray(data?.expenses?.expenses) ? data.expenses.expenses : (Array.isArray(data?.expenses) ? data.expenses : []);
+        // --- Add clinic_name to each expense before saving to IndexedDB ---
+        let clinicsMap = {};
+        try {
+          const clinics = await getAllFromStore('clinics');
+          clinicsMap = (clinics || []).reduce((acc, c) => { acc[c.id] = c.name; return acc; }, {});
+        } catch { /* ignore */ }
+        const expensesWithClinicName = expensesArr.map(e => ({
+          ...e,
+          clinic_name: e.clinic_name || clinicsMap[e.clinic_id] || ''
+        }));
+        setExpenses(expensesWithClinicName);
+        // Save to IndexedDB for offline use
+        await clearStore('expenses');
+        for (const e of expensesWithClinicName) await putToStore('expenses', e);
       } else {
-        alert(data.message || "Failed to fetch expenses");
+        // Offline: load from IndexedDB
+        const all = await getAllFromStore('expenses');
+        setExpenses(Array.isArray(all) ? all : []);
       }
-    } catch (err) {
-      alert("Network error");
+    } catch {
+      setExpenses([]);
     }
     setLoading(false);
-  }
+  }, [isOnline, limit]);
+
+  useEffect(() => {
+    if (didFetchRef.current) return;
+    didFetchRef.current = true;
+    fetchExpenses(page);
+  }, [page, fetchExpenses]);
+
+  useEffect(() => {
+    function handleOnline() { setIsOnline(true); }
+    function handleOffline() { setIsOnline(false); }
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const [showCollectForm, setShowCollectForm] = useState(false);
   const [showPaymentsModal, setShowPaymentsModal] = useState(false);
@@ -55,9 +85,22 @@ export default function ExpenseList() {
     setShowCollectForm(true);
   };
 
-  const openPaymentsModal = (payments) => {
-    setCurrentPayments(payments || []);
-    setShowPaymentsModal(true);
+  const openPaymentsModal = async (payments, expenseId) => {
+    if (isOnline) {
+      setCurrentPayments(payments || []);
+      setShowPaymentsModal(true);
+    } else {
+      // Offline: get payments for this expense from IndexedDB
+      try {
+        const allPayments = await getAllFromStore('payments');
+        const filtered = (allPayments || []).filter(p => String(p.expense_id) === String(expenseId));
+        setCurrentPayments(filtered);
+        setShowPaymentsModal(true);
+      } catch {
+        setCurrentPayments([]);
+        setShowPaymentsModal(true);
+      }
+    }
   };
 
   const handleCollectSave = async () => {
@@ -67,55 +110,6 @@ export default function ExpenseList() {
     }
     try {
       const token = localStorage.getItem("doctor_token");
-      // If offline, handle payment and expense update in local DB
-      if (!navigator.onLine) {
-        const db = await (await import("../../utils/db")).dbPromise;
-        // 1. Add payment to payments table
-        const paymentId = Date.now();
-        const payment = {
-          id: paymentId,
-          expenseId: currentId,
-          payment_date: collectedDate,
-          amount: parseFloat(additionalAmount),
-        };
-        await db.put("payments", payment);
-        // 2. Update expense: add payment to payments array, update received_amount and pending_amount
-        const expense = await db.get("expenses", currentId);
-        if (expense) {
-          const payments = Array.isArray(expense.payments) ? [...expense.payments] : [];
-          payments.push(payment);
-          const received_amount = (parseFloat(expense.received_amount) || 0) + payment.amount;
-          const pending_amount = (parseFloat(expense.billed_amount) || 0) - received_amount;
-          await db.put("expenses", {
-            ...expense,
-            payments,
-            received_amount,
-            pending_amount,
-          });
-        }
-        // 3. Queue the payment mutation for sync when back online
-        await db.add("queue", {
-          url: `${BASE_URL}/doctor/expense/payment`,
-          options: {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ date: collectedDate, amount: parseFloat(additionalAmount) , offlineExpenseId: currentId}),
-          },
-          store: 'payments',
-          method: 'POST',
-          data: payment
-        });
-        alert("Payment added offline. Will sync when online.");
-        setShowCollectForm(false);
-        setCurrentId(null);
-        setCollectedDate("");
-        setAdditionalAmount("");
-        fetchExpenses(page);
-        return;
-      }
       const res = await apiFetch(
         `${BASE_URL}/doctor/expense/payment`,
         {
@@ -129,19 +123,11 @@ export default function ExpenseList() {
             amount: parseFloat(additionalAmount),
             expenseId: currentId,
           }),
-        },
-        { store: 'expenses', method: 'POST', data: { date: collectedDate, amount: parseFloat(additionalAmount) } }
+        }
       );
       const data = await res.json();
       if (res.ok) {
         alert("Payment added successfully.");
-        setShowCollectForm(false);
-        setCurrentId(null);
-        setCollectedDate("");
-        setAdditionalAmount("");
-        fetchExpenses(page);
-      } else if (data.offline) {
-        alert("Payment added offline. Will sync when online.");
         setShowCollectForm(false);
         setCurrentId(null);
         setCollectedDate("");
@@ -154,8 +140,6 @@ export default function ExpenseList() {
       alert("Network error");
     }
   };
-
-  const handleEdit = (id) => navigate(`/expenses/edit/${id}`);
 
   const handleDelete = async (id) => {
     if (window.confirm("Are you sure you want to delete this?")) {
@@ -184,13 +168,14 @@ export default function ExpenseList() {
     }
   };
 
-  const selectedExpense = expenses.find((e) => e.id === currentId);
-
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">
         Expense Records
       </h2>
+      {!isOnline && (
+        <div className="text-center text-red-500 mb-4">You are offline. Add/Edit/Delete actions are disabled.</div>
+      )}
       {loading ? (
         <div className="text-center text-gray-500 py-8">Loading...</div>
       ) : (
@@ -234,6 +219,7 @@ export default function ExpenseList() {
                           <button
                             onClick={() => handleDelete(exp.id)}
                             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition"
+                            disabled={!isOnline}
                           >
                             ❌ Delete
                           </button>
@@ -248,7 +234,7 @@ export default function ExpenseList() {
                             📄 View Details
                           </button>
                           <button
-                            onClick={() => openPaymentsModal(exp.payments)}
+                            onClick={() => openPaymentsModal(exp.payments, exp.id)}
                             className="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded transition"
                           >
                             💳 Payments
@@ -257,6 +243,7 @@ export default function ExpenseList() {
                             <button
                               onClick={() => openCollectForm(exp.id)}
                               className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition"
+                              disabled={!isOnline}
                             >
                               💵 Collect
                             </button>
@@ -279,12 +266,12 @@ export default function ExpenseList() {
               Previous
             </button>
             <span className="px-2 text-sm">
-              Page {page} of {totalPages}
+              Page {page}
             </span>
             <button
               className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              disabled
             >
               Next
             </button>

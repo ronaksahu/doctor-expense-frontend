@@ -1,11 +1,28 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { BASE_URL } from "../utils/constants";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   // Get doctor user from localStorage
   const doctorUser = JSON.parse(localStorage.getItem("doctor_user") || "{}");
   const [showProfile, setShowProfile] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+    }
+    function handleOffline() {
+      setIsOnline(false);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -34,6 +51,7 @@ export default function Dashboard() {
           <button
             onClick={() => navigate("/clinic/add")}
             className="bg-green-600 text-white py-3 rounded-md shadow hover:bg-green-700"
+            disabled={!isOnline}
           >
             ➕ Add Clinic
           </button>
@@ -46,6 +64,7 @@ export default function Dashboard() {
           <button
             onClick={() => navigate("/expenses/add")}
             className="bg-indigo-600 text-white py-3 rounded-md shadow hover:bg-indigo-700"
+            disabled={!isOnline}
           >
             ➕ Add Expenses
           </button>
@@ -61,6 +80,12 @@ export default function Dashboard() {
           >
             📊 Complete Reports
           </button>
+          <button
+            onClick={() => navigate("/reports/hospitals")}
+            className="bg-pink-500 text-white py-3 rounded-md shadow hover:bg-pink-600"
+          >
+            🏥 Hospital Records
+          </button>
         </div>
 
         {/* Logout */}
@@ -69,9 +94,9 @@ export default function Dashboard() {
             onClick={async () => {
               try {
                 await fetch(
-                  `${
-                    import.meta.env.VITE_API_BASE_URL || "http://localhost:8800/api"
-                  }/auth/doctor/logout`,
+                  `
+                    ${BASE_URL}
+                  /auth/doctor/logout`,
                   {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },

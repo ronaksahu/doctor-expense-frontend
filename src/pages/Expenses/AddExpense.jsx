@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { Network } from '@capacitor/network';
 
 export default function AddExpense() {
   const [clinicList, setClinicList] = useState([]);
@@ -14,7 +15,9 @@ export default function AddExpense() {
   const [paymentStatus, setPaymentStatus] = useState("None");
   const [paymentMode, setPaymentMode] = useState("NEFT");
   const [amountReceived, setAmountReceived] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Fetch clinic names on mount
   useEffect(() => {
@@ -28,8 +31,7 @@ export default function AddExpense() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-          },
-          { store: 'clinics', method: 'GET' }
+          }
         );
         const data = await res.json();
         if (res.ok && Array.isArray(data.clinics)) {
@@ -42,6 +44,25 @@ export default function AddExpense() {
     fetchClinics();
   }, []);
 
+  // Update online status on navigator.onLine change
+  useEffect(() => {
+    let listener;
+    Network.getStatus().then(status => setIsOnline(status.connected));
+    Network.addListener('networkStatusChange', status => {
+      setIsOnline(status.connected);
+    }).then(l => { listener = l; });
+    return () => {
+      if (listener && listener.remove) listener.remove();
+    };
+  }, []);
+
+  // Set clinicId from query param if present
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const clinicIdParam = params.get("clinic_id");
+    if (clinicIdParam) setClinicId(clinicIdParam);
+  }, [location.search]);
+
   // Calculate TDS and totals
   // billedAmount is the amount after TDS deduction (user input)
   const billed = parseFloat(billedAmount) || 0;
@@ -52,11 +73,11 @@ export default function AddExpense() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const token = localStorage.getItem("doctor_token");
+    if (!isOnline) return;
     try {
+      const token = localStorage.getItem("doctor_token");
       // Find clinic name from clinicList
-      const clinicObj = clinicList.find(c => String(c.id) === String(clinicId));
-      const clinic_name = clinicObj ? clinicObj.name : clinicId;
+
       function generateSmallId() {
         return Math.floor(100000 + Math.random() * 900000); // 6-digit
       }
@@ -66,58 +87,11 @@ export default function AddExpense() {
         `${BASE_URL}/doctor/expense`,
         {
           method: "POST",
-          headers:
-        {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({
-        notes,
-        expense_date: date,
-        category,
-        billed_amount: billed,
-        tds_deducted: tdsDeducted === "yes",
-        tds_amount: tds,
-        total_billed: totalBilled,
-        payment_status: paymentStatus,
-        payment_mode: paymentMode,
-        amount_received: received,
-        clinic_id: clinicId,
-        payment_local_id: ranId
-
-          }),
-        },
-        { 
-          store: 'expenses', 
-          method: 'POST', 
-          data: {
-            notes,
-            expense_date: date,
-            category,
-            billed_amount: billed,
-            tds_deducted: tdsDeducted === "yes",
-            tds_amount: tds,
-            total_billed: totalBilled,
-            payment_status: paymentStatus,
-            payment_mode: paymentMode,
-            received_amount: received,
-            clinic_id: clinicId,
-            clinic_name, // added clinic_name
-            pending_amount: totalBilled - received, // always present
-            payment_local_id: ranId ,// pass to local DB and queue
-            id: ranId
-          } 
-        }
-      );
-      const data = await res.json();
-      if (res.ok) {
-        // Get the expense id from the API response
-        const responseData = await res.json();
-        const expenseId = responseData.id || (responseData.expense && responseData.expense.id);
-        // Save the expense in local DB with the backend id for consistency
-        if (expenseId) {
-          const db = await (await import("../../utils/db")).dbPromise;
-          await db.put("expenses", {
             notes,
             expense_date: date,
             category,
@@ -128,44 +102,14 @@ export default function AddExpense() {
             payment_status: paymentStatus,
             payment_mode: paymentMode,
             amount_received: received,
-            received_amount: received,
-            pending_amount: totalBilled - received,
             clinic_id: clinicId,
-            clinic_name,
-            id: expenseId,
-          });
+            payment_local_id: ranId
+          })
         }
-        alert("Expense and payment added successfully.");
-        navigate("/expenses/list");
-      } else if (data.offline) {
-        // Offline: update cache and UI immediately
-        const db = await (await import("../../utils/db")).dbPromise;
-        // Find clinic name from clinicList
-        const clinicObj = clinicList.find(c => String(c.id) === String(clinicId));
-        const clinic_name = clinicObj ? clinicObj.name : clinicId;
-        // Generate a small unique ID for offline record (e.g., random 6-digit number)
-        
-        const offlineExpense = {
-          notes,
-          expense_date: date,
-          category,
-          billed_amount: billed,
-          tds_deducted: tdsDeducted === "yes",
-          tds_amount: tds,
-          total_billed: totalBilled,
-          payment_status: paymentStatus,
-          payment_mode: paymentMode,
-          amount_received: received, // for compatibility
-          received_amount: received, // always present
-          pending_amount: pendingBalance, // always present
-          clinic_id: clinicId,
-          clinic_name, // always present
-          id: ranId,
-          payment_local_id: ranId,
-        };
-        await db.put("expenses", offlineExpense);
-        alert("Expense added offline. Will sync when online.");
-        // Instead of navigate+replace, just navigate to trigger ExpenseList fetch
+      );
+      const data = await res.json();
+      if (res.ok) {
+        alert("Expense added successfully.");
         navigate("/expenses/list");
       } else {
         alert(data.message || "Failed to add expense");
@@ -179,6 +123,9 @@ export default function AddExpense() {
     <div className="min-h-screen bg-gray-100 p-6 flex justify-center">
       <div className="bg-white p-6 rounded-xl shadow-md w-full max-w-2xl">
         <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">Add Expense</h2>
+        {!isOnline && (
+          <div className="text-center text-red-500 mb-4">You are offline. Add actions are disabled.</div>
+        )}
         <form className="space-y-4" onSubmit={handleSubmit}>
           {/* Clinic Name */}
           <div>
@@ -194,6 +141,12 @@ export default function AddExpense() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            {/* Show selected clinic name as text if clinicId is set and found in clinicList */}
+            {clinicId && clinicList.length > 0 && (
+              <div className="mt-2 text-green-700 font-semibold">
+                Selected Clinic: {clinicList.find(c => String(c.id) === String(clinicId))?.name || ""}
+              </div>
+            )}
           </div>
           {/* Notes */}
           <div>
@@ -345,6 +298,7 @@ export default function AddExpense() {
           </div>
           <button
             type="submit"
+            disabled={!isOnline}
             className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
           >
             Save Expense

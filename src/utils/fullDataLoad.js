@@ -18,7 +18,26 @@ export async function fullDataLoad() {
   await db.clear("expenses");
   await db.clear("payments");
   for (const clinic of data.clinics) await db.put("clinics", clinic);
-  for (const expense of data.expenses) await db.put("expenses", expense);
+  // Build a map of clinic_id to name from clinics and clinicIdNameList
+  const clinicIdNameMap = {};
+  if (Array.isArray(data.clinics)) {
+    for (const c of data.clinics) clinicIdNameMap[c.id] = c.name;
+  }
+  if (Array.isArray(data.clinicIdNameList)) {
+    for (const c of data.clinicIdNameList) clinicIdNameMap[c.id] = c.name;
+  }
+  // Store expenses with clinic_name
+  for (const expense of data.expenses) {
+    let clinic_name = "";
+    if (expense.clinic_name) {
+      clinic_name = expense.clinic_name;
+    } else if (expense.clinic && expense.clinic.name) {
+      clinic_name = expense.clinic.name;
+    } else if (clinicIdNameMap[expense.clinic_id]) {
+      clinic_name = clinicIdNameMap[expense.clinic_id];
+    }
+    await db.put("expenses", { ...expense, clinic_name });
+  }
   for (const payment of data.payments) await db.put("payments", payment);
   // Clear the queue after successful sync
   await db.clear("queue");

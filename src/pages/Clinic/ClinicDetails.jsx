@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { getAllFromStore } from "../../utils/db";
 
 export default function ClinicDetails() {
   
@@ -14,40 +15,51 @@ export default function ClinicDetails() {
     async function fetchClinic() {
       setLoading(true);
       try {
-        const token = localStorage.getItem("doctor_token");
-        const res = await apiFetch(
-          `${BASE_URL}/doctor/getClinicList?id=${id}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          },
-          { store: 'clinics', method: 'GET' }
-        );
-        const data = await res.json();
-        // Try to find the clinic by id in both online and offline mode
-        let foundClinic = null;
-        if (res.ok && data.clinic) {
-          foundClinic = data.clinic;
-        } else if (data.clinics && Array.isArray(data.clinics)) {
-          foundClinic = data.clinics.find((c) => String(c.id) === String(id));
-        } else if (Array.isArray(data) && data.length) {
-          foundClinic = data.find((c) => String(c.id) === String(id));
-        }
-        if (foundClinic) {
-          // Try to get createdAt from multiple possible fields for offline/online
-          let createdAt = foundClinic.createdAt || foundClinic.created_at || foundClinic.registeredAt || foundClinic.registered_at || null;
-          setClinic({ ...foundClinic, createdAt });
+        if (!navigator.onLine) {
+          // Offline: load from IndexedDB
+          const all = await getAllFromStore('clinics');
+          const foundClinic = (all || []).find((c) => String(c.id) === String(id));
+          if (foundClinic) {
+            let createdAt = foundClinic.createdAt || foundClinic.created_at || foundClinic.registeredAt || foundClinic.registered_at || null;
+            setClinic({ ...foundClinic, createdAt });
+          } else {
+            alert("Clinic not found in offline cache");
+          }
         } else {
-          alert(data.message || "Failed to fetch clinic details");
+          const token = localStorage.getItem("doctor_token");
+          const res = await apiFetch(
+            `${BASE_URL}/doctor/getClinicList?id=${id}`,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+            },
+            { store: 'clinics', method: 'GET' }
+          );
+          const data = await res.json();
+          // Try to find the clinic by id in both online and offline mode
+          let foundClinic = null;
+          if (res.ok && data.clinic) {
+            foundClinic = data.clinic;
+          } else if (data.clinics && Array.isArray(data.clinics)) {
+            foundClinic = data.clinics.find((c) => String(c.id) === String(id));
+          } else if (Array.isArray(data) && data.length) {
+            foundClinic = data.find((c) => String(c.id) === String(id));
+          }
+          if (foundClinic) {
+            let createdAt = foundClinic.createdAt || foundClinic.created_at || foundClinic.registeredAt || foundClinic.registered_at || null;
+            setClinic({ ...foundClinic, createdAt });
+          } else {
+            alert(data.message || "Failed to fetch clinic details");
+          }
         }
       } catch {
         alert("Network error");
       }
       setLoading(false);
     }
-    fetchClinic();
+    if (id) fetchClinic();
   }, [id]);
 
   if (loading) {

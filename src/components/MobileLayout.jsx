@@ -23,8 +23,8 @@ export default function MobileLayout({ children }) {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <main className="flex-grow overflow-y-auto">{children}</main>
-
+      <main className="flex-grow overflow-y-auto pb-16">{children}</main>
+      {/* Add extra bottom padding to main to prevent content from being hidden behind navbar */}
       <nav className="bg-white border-t px-4 py-2 text-xs flex justify-around fixed bottom-0 w-full shadow-md z-10">
         {navItems.map((item) => (
           <button

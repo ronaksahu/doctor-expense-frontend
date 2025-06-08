@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { Network } from '@capacitor/network';
 
 export default function EditClinic() {
   const { id } = useParams();
@@ -15,6 +16,18 @@ export default function EditClinic() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    let listener;
+    Network.getStatus().then(status => setIsOnline(status.connected));
+    Network.addListener('networkStatusChange', status => {
+      setIsOnline(status.connected);
+    }).then(l => { listener = l; });
+    return () => {
+      if (listener && listener.remove) listener.remove();
+    };
+  }, []);
 
   useEffect(() => {
     async function fetchClinic() {
@@ -28,8 +41,7 @@ export default function EditClinic() {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-          },
-          { store: 'clinics', method: 'GET' }
+          }
         );
         const data = await res.json();
         // Try to find the clinic by id in both online and offline mode
@@ -68,7 +80,8 @@ export default function EditClinic() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSaving(true);
+    if (!isOnline) return;
+    setLoading(true);
     try {
       const token = localStorage.getItem("doctor_token");
       const res = await apiFetch(
@@ -80,35 +93,19 @@ export default function EditClinic() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(form),
-        },
-        { store: 'clinics', method: 'PUT', data: form }
+        }
       );
       const data = await res.json();
       if (res.ok) {
         alert("Clinic updated successfully.");
         navigate("/clinic/list");
-      } else if (data.offline) {
-        // Offline: update cache and UI immediately
-        const db = await (await import("../../utils/db")).dbPromise;
-        // Save the updated clinic in local DB with the same id (ensure id is a number if needed)
-        await db.put("clinics", { ...form, id: typeof id === 'number' ? id : Number(id) });
-        alert("Clinic updated offline. Will sync when online.");
-        navigate("/clinic/list");
       } else {
         alert(data.message || "Failed to update clinic");
       }
     } catch {
-      // Handle offline update if apiFetch throws (e.g., no network)
-      if (!navigator.onLine) {
-        const db = await (await import("../../utils/db")).dbPromise;
-        await db.put("clinics", { ...form, id: typeof id === 'number' ? id : Number(id) });
-        alert("Clinic updated offline. Will sync when online.");
-        navigate("/clinic/list");
-      } else {
-        alert("Network error");
-      }
+      alert("Network error");
     }
-    setSaving(false);
+    setLoading(false);
   };
 
   if (loading) {
@@ -125,6 +122,9 @@ export default function EditClinic() {
           ← Back to Clinic List
         </button>
         <h2 className="text-2xl font-bold text-blue-600 text-center mb-6">Edit Clinic</h2>
+        {!isOnline && (
+          <div className="text-center text-red-500 mb-4">You are offline. Update actions are disabled.</div>
+        )}
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-medium text-gray-700">Clinic/Hospital Name</label>
@@ -186,7 +186,7 @@ export default function EditClinic() {
           <button
             type="submit"
             className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition"
-            disabled={saving}
+            disabled={saving || !isOnline}
           >
             {saving ? "Saving..." : "Update Clinic"}
           </button>

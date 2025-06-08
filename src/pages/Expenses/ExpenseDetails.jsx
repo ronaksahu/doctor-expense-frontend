@@ -1,55 +1,63 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/apiFetch";
 import { BASE_URL } from "../../utils/constants";
+import { getAllFromStore } from "../../utils/db";
 
 export default function ExpenseDetails() {
   const { id } = useParams(); // expense id
-  const location = useLocation();
   const navigate = useNavigate();
   const [expense, setExpense] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // Get clinic_id from query or location state
-  const clinicId = location.state?.clinicId;
 
   useEffect(() => {
     async function fetchExpense() {
       setLoading(true);
       try {
-        const token = localStorage.getItem("doctor_token");
-        const res = await apiFetch(
-          `${BASE_URL}/doctor/expense/${id}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          },
-          { store: 'expenses', method: 'GET' }
-        );
-        const data = await res.json();
-        // Try to find the expense by id in both online and offline mode
-        let foundExpense = null;
-        if (res.ok && data.expense) {
-          foundExpense = data.expense;
-        } else if (data.expenses && Array.isArray(data.expenses)) {
-          foundExpense = data.expenses.find((e) => String(e.id) === String(id));
-        } else if (Array.isArray(data) && data.length) {
-          foundExpense = data.find((e) => String(e.id) === String(id));
-        }
-        if (foundExpense) {
-          setExpense(foundExpense);
+        if (!navigator.onLine) {
+          // Offline: load from IndexedDB
+          const all = await getAllFromStore('expenses');
+          const foundExpense = (all || []).find((e) => String(e.id) === String(id));
+          if (foundExpense) {
+            setExpense(foundExpense);
+          } else {
+            alert("Expense not found in offline cache");
+          }
         } else {
-          alert(data.message || "Failed to fetch expense details");
+          const token = localStorage.getItem("doctor_token");
+          const res = await apiFetch(
+            `${BASE_URL}/doctor/expense/${id}`,
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+            },
+            { store: 'expenses', method: 'GET' }
+          );
+          const data = await res.json();
+          // Try to find the expense by id in both online and offline mode
+          let foundExpense = null;
+          if (res.ok && data.expense) {
+            foundExpense = data.expense;
+          } else if (data.expenses && Array.isArray(data.expenses)) {
+            foundExpense = data.expenses.find((e) => String(e.id) === String(id));
+          } else if (Array.isArray(data) && data.length) {
+            foundExpense = data.find((e) => String(e.id) === String(id));
+          }
+          if (foundExpense) {
+            setExpense(foundExpense);
+          } else {
+            alert(data.message || "Failed to fetch expense details");
+          }
         }
       } catch {
         alert("Network error");
       }
       setLoading(false);
     }
-    if (clinicId && id) fetchExpense();
-  }, [clinicId, id]);
+    if (id) fetchExpense();
+  }, [id]);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading...</div>;
