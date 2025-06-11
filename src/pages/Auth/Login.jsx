@@ -88,6 +88,12 @@ export default function Login() {
           >
             Admin Login
           </button>
+          <button
+            className="text-red-600 hover:underline"
+            onClick={() => navigate("/doctor/forgot-password")}
+          >
+            Forgot Password?
+          </button>
         </div>
       </div>
     </div>

@@ -66,6 +66,12 @@ export default function AdminLogin() {
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
+        <button
+            className="text-red-600 hover:underline"
+            onClick={() => navigate("/admin/forgot-password")}
+          >
+            Forgot Password?
+          </button>
         <div className="mt-4 flex justify-center">
           <button
             className="text-blue-600 hover:underline"

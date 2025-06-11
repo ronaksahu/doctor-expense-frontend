@@ -25,6 +25,8 @@ import RecordsByHospital from "./pages/Reports/RecordsByHospital";
 // Components
 import MobileLayout from "./components/MobileLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import DoctorForgotPassword from "./pages/Auth/DoctorForgetPassword";
+import AdminForgotPassword from "./pages/Auth/AdminForgetPassword";
 
 function App() {
   // Remove syncQueue logic and related event listeners
@@ -154,6 +156,9 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/doctor/forgot-password" element={<DoctorForgotPassword />} />
+        <Route path="/admin/forgot-password" element={<AdminForgotPassword />} />
+
       </Routes>
       
     </Router>
